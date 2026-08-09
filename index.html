@@ -25,23 +25,31 @@
       <h1>Print Quote</h1>
       <p class="subtitle">Ballpark estimate → landed cost → margin pricing</p>
     </div>
+    <button type="button" class="reset-btn" id="resetBtn" title="Start over">↺ Reset</button>
   </div>
 </header>
 
 <main class="layout">
 
-  <!-- ============ STEP 1: FILE ============ -->
+  <!-- ============ STEP 1: FILE(S) ============ -->
   <section class="panel" id="panel-file">
-    <div class="panel-label"><span class="num">01</span> Part file</div>
+    <div class="panel-label"><span class="num">01</span> Part file(s)</div>
     <div class="dropzone" id="dropzone">
-      <input type="file" id="fileInput" accept=".stl,.obj,.3mf" hidden />
+      <input type="file" id="fileInput" multiple hidden />
       <div class="dropzone-content" id="dropzoneContent">
         <div class="dz-icon">＋</div>
-        <div class="dz-text">Drop an STL, OBJ, or 3MF — or tap to choose</div>
-        <div class="dz-hint">STEP files aren't supported here — quote those manually.</div>
+        <div class="dz-text">Drop STL/OBJ/3MF files — or tap to choose</div>
+        <div class="dz-hint">Multiple files quote together as one job. STEP isn't supported — quote those manually.</div>
       </div>
     </div>
     <div id="fileStatus" class="file-status"></div>
+    <ul class="parts-list" id="partsList"></ul>
+  </section>
+
+  <!-- ============ PREVIEW ============ -->
+  <section class="panel" id="panel-preview" hidden>
+    <div class="panel-label"><span class="num">·</span> Preview <span class="optional">drag to rotate</span></div>
+    <div class="viewer-wrap"><canvas id="viewerCanvas"></canvas></div>
   </section>
 
   <!-- ============ STEP 2: PRINTER + MATERIAL ============ -->
@@ -59,6 +67,17 @@
     <div class="field-row">
       <label>Material</label>
       <select id="materialSelect"></select>
+    </div>
+
+    <div class="field-row" id="customMaterialRow" hidden>
+      <label>Custom cost</label>
+      <input type="number" id="customCostInput" min="0" step="0.01" value="20" />
+      <span class="field-hint" id="customCostHint"></span>
+    </div>
+    <div class="field-row" id="customDensityRow" hidden>
+      <label>Custom density</label>
+      <input type="number" id="customDensityInput" min="0.1" step="0.01" value="1.2" />
+      <span class="field-hint">g/cm&sup3; — only affects FDM gram estimate</span>
     </div>
 
     <div class="field-row" id="colorsRow">
@@ -88,6 +107,14 @@
       <input type="number" id="laborInput" min="0" value="10" />
       <span class="field-hint" id="laborHint"></span>
     </div>
+
+    <div class="field-row">
+      <label>Units shown</label>
+      <div class="segmented" id="unitSelect">
+        <button type="button" class="seg-btn active" data-unit="mm">mm</button>
+        <button type="button" class="seg-btn" data-unit="in">inches</button>
+      </div>
+    </div>
   </section>
 
   <!-- ============ STEP 3: EXTRA MATERIALS ============ -->
@@ -110,29 +137,35 @@
     <button type="button" class="add-row-btn" id="addPackagingRow">+ Add item</button>
   </section>
 
+  <!-- ============ STEP 5: ADD-ONS ============ -->
+  <section class="panel" id="panel-addons" hidden>
+    <div class="panel-label"><span class="num">05</span> Extras <span class="optional">customer add-ons</span></div>
+    <div class="addons-list" id="addonsList"></div>
+  </section>
+
   <!-- ============ RESULTS ============ -->
   <section class="panel results" id="panel-results" hidden>
-    <div class="panel-label"><span class="num">05</span> Quote</div>
+    <div class="panel-label"><span class="num">06</span> Quote</div>
 
     <div class="fit-warning" id="fitWarning" hidden>
-      ⚠ Doesn't fit the build plate at any tested rotation — this part will need to be split. Estimate below is based on total material volume only.
+      ⚠ One or more parts don't fit the build plate at any tested rotation — those will need to be split. Estimate below is based on total material volume regardless.
     </div>
 
     <div class="readout-grid">
       <div class="readout">
-        <div class="readout-label">Dimensions (best orientation)</div>
+        <div class="readout-label">Combined envelope</div>
         <div class="readout-value" id="outDimensions">—</div>
       </div>
       <div class="readout">
-        <div class="readout-label">Est. material</div>
+        <div class="readout-label">Est. material (all parts)</div>
         <div class="readout-value" id="outMaterial">—</div>
       </div>
       <div class="readout">
-        <div class="readout-label">Est. print time</div>
+        <div class="readout-label">Est. print time (all parts)</div>
         <div class="readout-value" id="outTime">—</div>
       </div>
       <div class="readout">
-        <div class="readout-label">Orientation used</div>
+        <div class="readout-label">Parts</div>
         <div class="readout-value" id="outOrientation">—</div>
       </div>
     </div>
@@ -143,15 +176,38 @@
       <div class="breakdown-row"><span>Labor</span><span id="bdLabor">—</span></div>
       <div class="breakdown-row"><span>Machine (printer time)</span><span id="bdMachine">—</span></div>
       <div class="breakdown-row"><span>Packaging &amp; shipping</span><span id="bdPackaging">—</span></div>
+      <div class="breakdown-row" id="bdAddOnsRow" hidden><span>Extras</span><span id="bdAddOns">—</span></div>
       <div class="breakdown-row total"><span>Landed cost</span><span id="bdLanded">—</span></div>
     </div>
 
     <div class="margin-tiers" id="marginTiers"></div>
+    <p class="tap-hint">Tap a price to open a customer-shareable view.</p>
 
     <p class="disclaimer">Ballpark estimate, biased high. Not a real slice — calibrate against actual prints in <code>js/config.js</code>.</p>
   </section>
 
 </main>
+
+<!-- ============ CUSTOMER SHARE MODAL ============ -->
+<div class="modal-backdrop" id="customerModal" hidden>
+  <div class="modal">
+    <button type="button" class="modal-close" id="modalClose">✕</button>
+    <div class="modal-viewer-wrap"><canvas id="modalViewerCanvas"></canvas></div>
+    <h2 id="modalTitle">Quote</h2>
+    <div class="readout-grid small">
+      <div class="readout">
+        <div class="readout-label">Size</div>
+        <div class="readout-value" id="modalDims">—</div>
+      </div>
+      <div class="readout">
+        <div class="readout-label">Est. print time</div>
+        <div class="readout-value" id="modalTime">—</div>
+      </div>
+    </div>
+    <div class="breakdown" id="modalBreakdown"></div>
+    <button type="button" class="add-row-btn" id="modalCopyBtn">Copy quote as text</button>
+  </div>
+</div>
 
 <script type="module" src="js/app.js"></script>
 

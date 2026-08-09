@@ -242,6 +242,13 @@ function sizeTierForVolume(volumeCm3, sizeTiers) {
   return 'large';
 }
 
+/** Longest bbox dimension (mm) -> size tier name, per CONFIG.sizeTiersFdm. */
+function sizeTierForDimension(longestDimMm, sizeTiersFdm) {
+  if (longestDimMm <= sizeTiersFdm.small.maxDimMm) return 'small';
+  if (longestDimMm <= sizeTiersFdm.medium.maxDimMm) return 'medium';
+  return 'large';
+}
+
 /**
  * Machine cost per hour, derived exactly like the spreadsheet's Adv. Inputs
  * tab: (capital cost/hr + electrical cost/hr) x buffer factor.
@@ -262,5 +269,6 @@ export {
   estimateFDM,
   estimateResin,
   sizeTierForVolume,
+  sizeTierForDimension,
   machineCostPerHour,
 };

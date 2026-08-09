@@ -56,6 +56,20 @@ html, body {
   gap: 12px;
 }
 
+.reset-btn {
+  margin-left: auto;
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: var(--radius);
+  padding: 7px 12px;
+  font-size: 12px;
+  font-family: var(--sans);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.reset-btn:hover { border-color: var(--bad); color: var(--bad); }
+
 .mark {
   width: 34px;
   height: 34px;
@@ -402,4 +416,170 @@ html, body {
 @media (max-width: 400px) {
   .field-row label { flex-basis: 100%; }
   .field-hint { padding-left: 0; }
+}
+
+/* --- Parts list (multi-file) --- */
+.parts-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+}
+
+.parts-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 12.5px;
+}
+
+.parts-list li:last-child { border-bottom: none; }
+
+.part-name {
+  flex: 1;
+  color: var(--text);
+  font-family: var(--mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.part-meta {
+  color: var(--text-faint);
+  font-size: 11px;
+  font-family: var(--mono);
+  flex-shrink: 0;
+}
+
+.part-remove {
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.part-remove:hover { color: var(--bad); }
+
+/* --- 3D viewer --- */
+.viewer-wrap {
+  width: 100%;
+  height: 220px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 30%, #22292c, #14181b);
+  border: 1px solid var(--border-soft);
+}
+
+.viewer-wrap canvas, .modal-viewer-wrap canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+
+.modal-viewer-wrap {
+  width: 100%;
+  height: 200px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 30%, #22292c, #14181b);
+  border: 1px solid var(--border-soft);
+  margin-bottom: 16px;
+}
+
+/* --- Add-ons --- */
+.addons-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.addon-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--panel-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.addon-toggle.active {
+  border-color: var(--accent);
+  background: rgba(255, 122, 48, 0.08);
+}
+
+.addon-toggle .addon-name { color: var(--text); }
+.addon-toggle .addon-price { color: var(--text-muted); font-family: var(--mono); font-size: 12.5px; }
+.addon-toggle.active .addon-price { color: var(--accent); }
+
+.addon-group-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+  margin: 4px 0 -2px;
+}
+
+.tap-hint {
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-faint);
+  margin: 0 0 14px;
+}
+
+/* --- Customer modal --- */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 12, 14, 0.75);
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+@media (min-width: 500px) {
+  .modal-backdrop { align-items: center; }
+}
+
+.modal {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px 18px 24px;
+  width: 100%;
+  max-width: 440px;
+  max-height: 88vh;
+  overflow-y: auto;
+  position: relative;
+}
+
+.modal-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.modal h2 {
+  font-family: var(--mono);
+  font-size: 16px;
+  margin: 0 0 14px;
+  color: var(--text);
+}
+
+.readout-grid.small {
+  grid-template-columns: 1fr 1fr;
+  margin-bottom: 14px;
 }

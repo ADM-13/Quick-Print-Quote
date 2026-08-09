@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { ThreeMFLoader } from 'three/addons/loaders/3MFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 import { CONFIG } from './config.js';
 import {
@@ -9,17 +10,25 @@ import {
   estimateFDM,
   estimateResin,
   sizeTierForVolume,
+  sizeTierForDimension,
   machineCostPerHour,
 } from './geometry.js';
-import { efficiencyFactorForColors, calculateQuote } from './pricing.js';
+import { efficiencyFactorForColors, calculateQuote, customerBreakdownForTier } from './pricing.js';
 
 // ----------------------------------------------------------------------
 // STATE
 // ----------------------------------------------------------------------
+let nextPartId = 1;
 const state = {
-  geometry: null,       // merged THREE.BufferGeometry, world-transformed, non-indexed
+  parts: [],             // { id, name, geometry }
   printerId: 'p1s',
   laborTouchedByUser: false,
+  postageTouchedByUser: false,
+  unitSystem: 'mm',       // 'mm' | 'in'
+  activeAddonIds: new Set(),
+  activeShippingOverrideId: null,
+  lastQuote: null,
+  lastAgg: null,          // aggregated estimate across all parts
 };
 
 // ----------------------------------------------------------------------
@@ -29,14 +38,23 @@ const el = (id) => document.getElementById(id);
 const dropzone = el('dropzone');
 const fileInput = el('fileInput');
 const fileStatus = el('fileStatus');
+const partsList = el('partsList');
+const resetBtn = el('resetBtn');
 
+const panelPreview = el('panel-preview');
 const panelSetup = el('panel-setup');
 const panelExtras = el('panel-extras');
 const panelPackaging = el('panel-packaging');
+const panelAddons = el('panel-addons');
 const panelResults = el('panel-results');
 
 const printerSelect = el('printerSelect');
 const materialSelect = el('materialSelect');
+const customMaterialRow = el('customMaterialRow');
+const customCostInput = el('customCostInput');
+const customCostHint = el('customCostHint');
+const customDensityRow = el('customDensityRow');
+const customDensityInput = el('customDensityInput');
 const colorsRow = el('colorsRow');
 const colorsInput = el('colorsInput');
 const efficiencyHint = el('efficiencyHint');
@@ -46,24 +64,38 @@ const sizeTierHint = el('sizeTierHint');
 const quantityInput = el('quantityInput');
 const laborInput = el('laborInput');
 const laborHint = el('laborHint');
+const unitSelect = el('unitSelect');
 
 const materialsTableBody = document.querySelector('#materialsTable tbody');
 const packagingTableBody = document.querySelector('#packagingTable tbody');
 const addMaterialRowBtn = el('addMaterialRow');
 const addPackagingRowBtn = el('addPackagingRow');
+const addonsListEl = el('addonsList');
 
 const fitWarning = el('fitWarning');
 const outDimensions = el('outDimensions');
 const outMaterial = el('outMaterial');
 const outTime = el('outTime');
-const outOrientation = el('outOrientation');
+const outParts = el('outOrientation');
 const bdMaterial = el('bdMaterial');
 const bdExtras = el('bdExtras');
 const bdLabor = el('bdLabor');
 const bdMachine = el('bdMachine');
 const bdPackaging = el('bdPackaging');
+const bdAddOnsRow = el('bdAddOnsRow');
+const bdAddOns = el('bdAddOns');
 const bdLanded = el('bdLanded');
 const marginTiersEl = el('marginTiers');
+
+const viewerCanvas = el('viewerCanvas');
+const customerModal = el('customerModal');
+const modalClose = el('modalClose');
+const modalViewerCanvas = el('modalViewerCanvas');
+const modalTitle = el('modalTitle');
+const modalDims = el('modalDims');
+const modalTime = el('modalTime');
+const modalBreakdown = el('modalBreakdown');
+const modalCopyBtn = el('modalCopyBtn');
 
 // ----------------------------------------------------------------------
 // FORMATTERS
@@ -76,7 +108,122 @@ const fmtHours = (h) => {
   const mm = totalMin % 60;
   return hh > 0 ? `${hh}h ${mm}m` : `${mm}m`;
 };
-const fmtMm = (n) => `${n.toFixed(0)}mm`;
+const fmtLen = (mm) => (state.unitSystem === 'in' ? `${(mm / 25.4).toFixed(2)}"` : `${mm.toFixed(0)}mm`);
+const fmtDims = (x, y, z) => `${fmtLen(x)} \u00D7 ${fmtLen(y)} \u00D7 ${fmtLen(z)}`;
+
+// ----------------------------------------------------------------------
+// 3D VIEWER (used for both the inline preview and the customer modal)
+// ----------------------------------------------------------------------
+function createViewer(canvas) {
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(35, 1, 1, 10000);
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.autoRotate = true;
+  controls.autoRotateSpeed = 2.4;
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.enablePan = false;
+
+  const key = new THREE.DirectionalLight(0xffffff, 1.1);
+  key.position.set(1, 2, 1.5);
+  scene.add(key);
+  const fill = new THREE.DirectionalLight(0xffffff, 0.35);
+  fill.position.set(-1.2, -0.4, -1);
+  scene.add(fill);
+  scene.add(new THREE.AmbientLight(0x404040, 1.3));
+
+  const material = new THREE.MeshStandardMaterial({ color: 0xff7a30, roughness: 0.55, metalness: 0.05 });
+  let meshGroup = new THREE.Group();
+  scene.add(meshGroup);
+  let animId = null;
+
+  function resize() {
+    const w = canvas.clientWidth;
+    const h = canvas.clientHeight;
+    if (!w || !h) return;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  }
+
+  function frameToGroup() {
+    const box = new THREE.Box3().setFromObject(meshGroup);
+    if (box.isEmpty()) return;
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    const center = new THREE.Vector3();
+    box.getCenter(center);
+    const maxDim = Math.max(size.x, size.y, size.z, 1);
+    const dist = maxDim * 2.1;
+    camera.position.set(center.x + dist * 0.55, center.y + dist * 0.5, center.z + dist * 0.6);
+    camera.near = Math.max(maxDim * 0.01, 0.1);
+    camera.far = maxDim * 20;
+    camera.updateProjectionMatrix();
+    controls.target.copy(center);
+    controls.update();
+  }
+
+  function setGeometries(geometries) {
+    scene.remove(meshGroup);
+    meshGroup = new THREE.Group();
+    let xOffset = 0;
+    geometries.forEach((geom) => {
+      geom.computeBoundingBox();
+      const size = new THREE.Vector3();
+      geom.boundingBox.getSize(size);
+      const mesh = new THREE.Mesh(geom, material);
+      mesh.position.x = xOffset - geom.boundingBox.min.x;
+      xOffset += size.x + Math.max(5, size.x * 0.15);
+      meshGroup.add(mesh);
+    });
+    const box = new THREE.Box3().setFromObject(meshGroup);
+    if (!box.isEmpty()) {
+      const center = new THREE.Vector3();
+      box.getCenter(center);
+      meshGroup.position.sub(center);
+    }
+    scene.add(meshGroup);
+    resize();
+    frameToGroup();
+  }
+
+  function start() {
+    resize();
+    const loop = () => {
+      controls.update();
+      renderer.render(scene, camera);
+      animId = requestAnimationFrame(loop);
+    };
+    if (!animId) loop();
+  }
+
+  function stop() {
+    if (animId) cancelAnimationFrame(animId);
+    animId = null;
+  }
+
+  window.addEventListener('resize', resize);
+
+  return { setGeometries, start, stop, resize };
+}
+
+const mainViewer = createViewer(viewerCanvas);
+const modalViewer = createViewer(modalViewerCanvas);
+
+function refreshViewer() {
+  if (state.parts.length === 0) {
+    panelPreview.hidden = true;
+    mainViewer.stop();
+    return;
+  }
+  panelPreview.hidden = false;
+  mainViewer.setGeometries(state.parts.map((p) => p.geometry.clone()));
+  mainViewer.start();
+  requestAnimationFrame(() => mainViewer.resize());
+}
 
 // ----------------------------------------------------------------------
 // FILE LOADING
@@ -91,8 +238,6 @@ function readFileAs(file, mode) {
   });
 }
 
-/** Flattens any loaded object (single geometry, or a Group of meshes) into
- *  one non-indexed, world-transformed BufferGeometry for volume/area math. */
 function mergeToSingleGeometry(root) {
   root.updateMatrixWorld(true);
   const positions = [];
@@ -118,6 +263,7 @@ function mergeToSingleGeometry(root) {
 
   const merged = new THREE.BufferGeometry();
   merged.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  merged.computeVertexNormals();
   return merged;
 }
 
@@ -131,13 +277,11 @@ async function parseFile(file) {
     group.add(new THREE.Mesh(geometry));
     return mergeToSingleGeometry(group);
   }
-
   if (ext === 'obj') {
     const text = await readFileAs(file, 'text');
     const group = new OBJLoader().parse(text);
     return mergeToSingleGeometry(group);
   }
-
   if (ext === '3mf') {
     const buffer = await readFileAs(file, 'arraybuffer');
     const group = new ThreeMFLoader().parse(buffer);
@@ -151,37 +295,67 @@ async function parseFile(file) {
   );
 }
 
-async function handleFile(file) {
-  fileStatus.textContent = `Analyzing ${file.name}\u2026`;
+function renderPartsList() {
+  partsList.innerHTML = '';
+  state.parts.forEach((part) => {
+    const li = document.createElement('li');
+    const triCount = part.geometry.attributes.position.count / 3;
+    li.innerHTML = `
+      <span class="part-name">${part.name}</span>
+      <span class="part-meta">${triCount.toLocaleString()} tri</span>
+      <button type="button" class="part-remove" title="Remove">\u2715</button>
+    `;
+    li.querySelector('.part-remove').addEventListener('click', () => {
+      state.parts = state.parts.filter((p) => p.id !== part.id);
+      renderPartsList();
+      afterPartsChanged();
+    });
+    partsList.appendChild(li);
+  });
+}
+
+async function handleFiles(fileList) {
+  const files = Array.from(fileList);
+  if (files.length === 0) return;
+
+  fileStatus.textContent = `Analyzing ${files.length > 1 ? files.length + ' files' : files[0].name}\u2026`;
   fileStatus.className = 'file-status busy';
 
-  try {
-    const geometry = await parseFile(file);
-    const { volumeMm3 } = computeMeshStats(geometry);
-
-    if (!isFinite(volumeMm3) || volumeMm3 <= 0) {
-      fileStatus.textContent =
-        `Loaded ${file.name}, but couldn\u2019t get a reliable volume from it (mesh may not be watertight). ` +
-        `Estimates below may be off \u2014 double check, or fall back to manual quoting for this one.`;
-      fileStatus.className = 'file-status warn';
-    } else {
-      const triCount = geometry.attributes.position.count / 3;
-      fileStatus.textContent = `Loaded ${file.name} \u2014 ${triCount.toLocaleString()} triangles`;
-      fileStatus.className = 'file-status ok';
+  const errors = [];
+  for (const file of files) {
+    try {
+      const geometry = await parseFile(file);
+      const { volumeMm3 } = computeMeshStats(geometry);
+      if (!isFinite(volumeMm3) || volumeMm3 <= 0) {
+        errors.push(`${file.name}: couldn\u2019t get a reliable volume (mesh may not be watertight)`);
+      }
+      state.parts.push({ id: nextPartId++, name: file.name, geometry });
+    } catch (err) {
+      errors.push(`${file.name}: ${err.message || 'could not be read'}`);
     }
+  }
 
-    state.geometry = geometry;
-    state.laborTouchedByUser = false;
+  if (errors.length > 0) {
+    fileStatus.textContent = errors.join(' \u2014 ');
+    fileStatus.className = 'file-status warn';
+  } else {
+    fileStatus.textContent = `${state.parts.length} part${state.parts.length === 1 ? '' : 's'} loaded`;
+    fileStatus.className = 'file-status ok';
+  }
 
-    [panelSetup, panelExtras, panelPackaging, panelResults].forEach((p) => (p.hidden = false));
+  renderPartsList();
+  afterPartsChanged();
+}
 
-    populateMaterialsForPrinter();
-    applySizeTierSuggestion();
+function afterPartsChanged() {
+  const hasParts = state.parts.length > 0;
+  [panelSetup, panelExtras, panelPackaging, panelAddons, panelResults].forEach((p) => (p.hidden = !hasParts));
+  refreshViewer();
+  if (hasParts) {
+    updateDerivedDefaults();
     recalculate();
-  } catch (err) {
-    fileStatus.textContent = err.message || 'Could not read that file.';
-    fileStatus.className = 'file-status error';
-    state.geometry = null;
+  } else {
+    panelResults.hidden = true;
   }
 }
 
@@ -190,7 +364,8 @@ async function handleFile(file) {
 // ----------------------------------------------------------------------
 dropzone.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', () => {
-  if (fileInput.files[0]) handleFile(fileInput.files[0]);
+  if (fileInput.files.length) handleFiles(fileInput.files);
+  fileInput.value = '';
 });
 ['dragover', 'dragenter'].forEach((evt) =>
   dropzone.addEventListener(evt, (e) => {
@@ -205,8 +380,35 @@ fileInput.addEventListener('change', () => {
   })
 );
 dropzone.addEventListener('drop', (e) => {
-  const file = e.dataTransfer.files[0];
-  if (file) handleFile(file);
+  if (e.dataTransfer.files.length) handleFiles(e.dataTransfer.files);
+});
+
+// ----------------------------------------------------------------------
+// RESET
+// ----------------------------------------------------------------------
+resetBtn.addEventListener('click', () => {
+  state.parts = [];
+  state.printerId = 'p1s';
+  state.laborTouchedByUser = false;
+  state.postageTouchedByUser = false;
+  state.activeAddonIds = new Set();
+  state.activeShippingOverrideId = null;
+
+  printerSelect.querySelectorAll('.seg-btn').forEach((b, i) => b.classList.toggle('active', i === 0));
+  colorsInput.value = 1;
+  quantityInput.value = 1;
+  materialsTableBody.innerHTML = '';
+  packagingTableBody.innerHTML = '';
+  createLineRow(packagingTableBody, { name: 'Postage', qty: 1, unitCost: 0 });
+
+  fileStatus.textContent = '';
+  fileStatus.className = 'file-status';
+  partsList.innerHTML = '';
+
+  refreshAddonToggleStyles();
+  populateMaterialsForPrinter();
+  applyLaborDefault();
+  afterPartsChanged();
 });
 
 // ----------------------------------------------------------------------
@@ -219,8 +421,10 @@ printerSelect.querySelectorAll('.seg-btn').forEach((btn) => {
     state.printerId = btn.dataset.printer;
     populateMaterialsForPrinter();
     toggleRowsForPrinterType();
-    if (!state.laborTouchedByUser) applyLaborDefault();
-    if (state.geometry) recalculate();
+    if (state.parts.length) {
+      updateDerivedDefaults();
+      recalculate();
+    }
   });
 });
 
@@ -232,10 +436,20 @@ function toggleRowsForPrinterType() {
   const isFdm = currentPrinterCfg().type === 'fdm';
   colorsRow.hidden = !isFdm;
   sizeTierRow.hidden = isFdm;
+  updateCustomMaterialVisibility();
+}
+
+function updateCustomMaterialVisibility() {
+  const isFdm = currentPrinterCfg().type === 'fdm';
+  const isCustom = materialSelect.value === '__custom__';
+  customMaterialRow.hidden = !isCustom;
+  customDensityRow.hidden = !isCustom || !isFdm;
+  customCostHint.textContent = isFdm ? '$/kg' : '$/Liter';
 }
 
 function populateMaterialsForPrinter() {
   const printerCfg = currentPrinterCfg();
+  const prevValue = materialSelect.value;
   materialSelect.innerHTML = '';
   Object.keys(printerCfg.materials).forEach((key) => {
     const mat = printerCfg.materials[key];
@@ -245,8 +459,15 @@ function populateMaterialsForPrinter() {
     opt.textContent = `${key} (${costLabel})`;
     materialSelect.appendChild(opt);
   });
-  materialSelect.value = printerCfg.defaultMaterial;
-  toggleRowsForPrinterType();
+  const customOpt = document.createElement('option');
+  customOpt.value = '__custom__';
+  customOpt.textContent = 'Custom\u2026';
+  materialSelect.appendChild(customOpt);
+
+  materialSelect.value = prevValue && [...materialSelect.options].some((o) => o.value === prevValue)
+    ? prevValue
+    : printerCfg.defaultMaterial;
+  updateCustomMaterialVisibility();
 }
 
 function applyLaborDefault() {
@@ -261,16 +482,44 @@ function applyLaborDefault() {
   }
 }
 
-function applySizeTierSuggestion() {
-  if (!state.geometry) return;
-  // Size tiers are about total resin needed (part + supports), regardless
-  // of which printer is currently selected in the UI.
-  const resinEstimate = estimateResin(state.geometry, CONFIG.printers.photon, CONFIG.resinEstimate);
-  const volumeCm3 = resinEstimate.totalVolumeMm3 / 1000;
-  const tier = sizeTierForVolume(volumeCm3, CONFIG.sizeTiers);
-  sizeTierSelect.value = tier;
-  sizeTierHint.textContent = `Suggested from est. resin needed (${(volumeCm3 / 1000).toFixed(2)} L) \u2014 override if needed`;
+function applyPostageDefault(tier) {
+  const row = Array.from(packagingTableBody.querySelectorAll('tr')).find(
+    (tr) => tr.querySelector('.row-name').value.trim().toLowerCase() === 'postage'
+  );
+  if (!row) return;
+  row.querySelector('.row-cost').value = CONFIG.postageBySizeTier[tier];
+}
+
+/** Recomputes both the resin (volume-based) and FDM (dimension-based) size
+ *  tiers across ALL loaded parts, and refreshes labor/postage defaults. */
+function updateDerivedDefaults() {
+  if (state.parts.length === 0) return;
+
+  let resinTotalVolumeMm3 = 0;
+  let maxDimMm = 0;
+  let anyFail = false;
+
+  state.parts.forEach((part) => {
+    try {
+      const resinEst = estimateResin(part.geometry, CONFIG.printers.photon, CONFIG.resinEstimate);
+      resinTotalVolumeMm3 += resinEst.totalVolumeMm3;
+      const fdmEst = estimateFDM(part.geometry, CONFIG.printers.p1s, CONFIG.fdmEstimate);
+      maxDimMm = Math.max(maxDimMm, fdmEst.bbox.x, fdmEst.bbox.y, fdmEst.bbox.z);
+    } catch {
+      anyFail = true;
+    }
+  });
+  if (anyFail) return;
+
+  const resinTier = sizeTierForVolume(resinTotalVolumeMm3 / 1000, CONFIG.sizeTiers);
+  sizeTierSelect.value = resinTier;
+  sizeTierHint.textContent = `Suggested from est. resin needed (${(resinTotalVolumeMm3 / 1e6).toFixed(2)} L) \u2014 override if needed`;
+
+  const fdmTier = sizeTierForDimension(maxDimMm, CONFIG.sizeTiersFdm);
+  const activeTier = currentPrinterCfg().type === 'fdm' ? fdmTier : resinTier;
+
   if (!state.laborTouchedByUser) applyLaborDefault();
+  if (!state.postageTouchedByUser) applyPostageDefault(activeTier);
 }
 
 colorsInput.addEventListener('input', () => {
@@ -286,6 +535,9 @@ colorsInput.addEventListener('input', () => {
 
 sizeTierSelect.addEventListener('change', () => {
   if (!state.laborTouchedByUser) applyLaborDefault();
+  if (!state.postageTouchedByUser && currentPrinterCfg().type === 'resin') {
+    applyPostageDefault(sizeTierSelect.value);
+  }
   recalculate();
 });
 
@@ -294,11 +546,25 @@ laborInput.addEventListener('input', () => {
   recalculate();
 });
 
+materialSelect.addEventListener('change', () => {
+  updateCustomMaterialVisibility();
+  recalculate();
+});
+customCostInput.addEventListener('input', recalculate);
+customDensityInput.addEventListener('input', recalculate);
 quantityInput.addEventListener('input', recalculate);
-materialSelect.addEventListener('change', recalculate);
+
+unitSelect.querySelectorAll('.seg-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    unitSelect.querySelectorAll('.seg-btn').forEach((b) => b.classList.remove('active'));
+    btn.classList.add('active');
+    state.unitSystem = btn.dataset.unit;
+    if (state.lastAgg) renderResults(state.lastAgg, state.lastQuote);
+  });
+});
 
 // ----------------------------------------------------------------------
-// LINE-ITEM TABLES (hardware/extras + packaging)
+// LINE-ITEM TABLES
 // ----------------------------------------------------------------------
 function createLineRow(tbody, defaults = { name: '', qty: 1, unitCost: 0 }) {
   const tr = document.createElement('tr');
@@ -308,7 +574,14 @@ function createLineRow(tbody, defaults = { name: '', qty: 1, unitCost: 0 }) {
     <td><input type="number" class="row-cost" min="0" step="0.01" value="${defaults.unitCost}" /></td>
     <td><button type="button" class="row-remove" title="Remove">\u2715</button></td>
   `;
+  const costInput = tr.querySelector('.row-cost');
+  const nameInput = tr.querySelector('.row-name');
   tr.querySelectorAll('input').forEach((input) => input.addEventListener('input', recalculate));
+  if (tbody === packagingTableBody) {
+    costInput.addEventListener('input', () => {
+      if (nameInput.value.trim().toLowerCase() === 'postage') state.postageTouchedByUser = true;
+    });
+  }
   tr.querySelector('.row-remove').addEventListener('click', () => {
     tr.remove();
     recalculate();
@@ -327,27 +600,95 @@ function readLineItems(tbody) {
 
 addMaterialRowBtn.addEventListener('click', () => createLineRow(materialsTableBody));
 addPackagingRowBtn.addEventListener('click', () => createLineRow(packagingTableBody));
-
-// Seed packaging with a postage row, matching the spreadsheet's default layout.
 createLineRow(packagingTableBody, { name: 'Postage', qty: 1, unitCost: 0 });
+
+// ----------------------------------------------------------------------
+// ADD-ONS
+// ----------------------------------------------------------------------
+function createAddonToggle(extraCfg) {
+  const div = document.createElement('div');
+  div.className = 'addon-toggle';
+  div.dataset.id = extraCfg.id;
+  div.innerHTML = `<span class="addon-name">${extraCfg.label}</span><span class="addon-price">$${extraCfg.amount}</span>`;
+  div.addEventListener('click', () => {
+    if (extraCfg.type === 'shipping-override') {
+      state.activeShippingOverrideId = state.activeShippingOverrideId === extraCfg.id ? null : extraCfg.id;
+    } else {
+      if (state.activeAddonIds.has(extraCfg.id)) state.activeAddonIds.delete(extraCfg.id);
+      else state.activeAddonIds.add(extraCfg.id);
+    }
+    refreshAddonToggleStyles();
+    recalculate();
+  });
+  return div;
+}
+
+function refreshAddonToggleStyles() {
+  addonsListEl.querySelectorAll('.addon-toggle').forEach((elToggle) => {
+    const id = elToggle.dataset.id;
+    const isActive = state.activeAddonIds.has(id) || state.activeShippingOverrideId === id;
+    elToggle.classList.toggle('active', isActive);
+  });
+}
+
+function buildAddonsUI() {
+  addonsListEl.innerHTML = '';
+  const addonLabel = document.createElement('div');
+  addonLabel.className = 'addon-group-label';
+  addonLabel.textContent = 'Add-ons';
+  addonsListEl.appendChild(addonLabel);
+  CONFIG.extras.filter((e) => e.type === 'addon').forEach((a) => addonsListEl.appendChild(createAddonToggle(a)));
+
+  const shipLabel = document.createElement('div');
+  shipLabel.className = 'addon-group-label';
+  shipLabel.textContent = 'Shipping upgrade (replaces postage)';
+  addonsListEl.appendChild(shipLabel);
+  CONFIG.extras.filter((e) => e.type === 'shipping-override').forEach((a) => addonsListEl.appendChild(createAddonToggle(a)));
+}
+buildAddonsUI();
 
 // ----------------------------------------------------------------------
 // MAIN CALCULATION
 // ----------------------------------------------------------------------
+function currentMaterialCfg() {
+  const printerCfg = currentPrinterCfg();
+  const isFdm = printerCfg.type === 'fdm';
+  if (materialSelect.value === '__custom__') {
+    const cost = parseFloat(customCostInput.value) || 0;
+    const density = parseFloat(customDensityInput.value) || 1.2;
+    return isFdm ? { costPerKg: cost, densityGcm3: density } : { costPerLiter: cost };
+  }
+  return printerCfg.materials[materialSelect.value];
+}
+
 function recalculate() {
-  if (!state.geometry) return;
+  if (state.parts.length === 0) return;
 
   const printerCfg = currentPrinterCfg();
-  const materialKey = materialSelect.value;
-  const materialCfg = printerCfg.materials[materialKey];
+  const materialCfg = currentMaterialCfg();
   const isFdm = printerCfg.type === 'fdm';
 
-  const estimate = isFdm
-    ? estimateFDM(state.geometry, printerCfg, CONFIG.fdmEstimate)
-    : estimateResin(state.geometry, printerCfg, CONFIG.resinEstimate);
+  let totalVolumeMm3 = 0;
+  let totalHours = 0;
+  let anyMisfit = false;
+  let maxDim = { x: 0, y: 0, z: 0 };
+  const perPart = [];
 
-  const volumeCm3 = estimate.totalVolumeMm3 / 1000;
-  const gramsOrMl = volumeCm3 * (isFdm ? materialCfg.densityGcm3 : 1); // resin costed by volume (mL)
+  state.parts.forEach((part) => {
+    const est = isFdm
+      ? estimateFDM(part.geometry, printerCfg, CONFIG.fdmEstimate)
+      : estimateResin(part.geometry, printerCfg, CONFIG.resinEstimate);
+    totalVolumeMm3 += est.totalVolumeMm3;
+    totalHours += est.hours;
+    if (!est.fits) anyMisfit = true;
+    if (Math.max(est.bbox.x, est.bbox.y, est.bbox.z) > Math.max(maxDim.x, maxDim.y, maxDim.z)) {
+      maxDim = est.bbox;
+    }
+    perPart.push({ name: part.name, bbox: est.bbox, fits: est.fits });
+  });
+
+  const volumeCm3 = totalVolumeMm3 / 1000;
+  const gramsOrMl = volumeCm3 * (isFdm ? materialCfg.densityGcm3 : 1);
   const unitLabel = isFdm ? 'g' : 'mL';
 
   const efficiencyFactor = isFdm
@@ -360,48 +701,129 @@ function recalculate() {
 
   const costPerKgOrLiter = isFdm ? materialCfg.costPerKg : materialCfg.costPerLiter;
 
+  const addOns = CONFIG.extras
+    .filter((e) => e.type === 'addon' && state.activeAddonIds.has(e.id))
+    .map((e) => ({ name: e.label, amount: e.amount }));
+  const shippingOverrideAmount = state.activeShippingOverrideId
+    ? CONFIG.extras.find((e) => e.id === state.activeShippingOverrideId).amount
+    : null;
+
   const quote = calculateQuote({
     gramsOrMl,
     costPerKgOrLiter,
     efficiencyFactor,
     quantity: Math.max(1, parseInt(quantityInput.value || '1', 10)),
-    printHours: estimate.hours,
+    printHours: totalHours,
     machineCostPerHour: machineCostPerHour(printerCfg),
     laborMinutes: Math.max(0, parseFloat(laborInput.value || '0')),
     laborRatePerHour: CONFIG.pricing.laborRatePerHour,
     materialsExtra: readLineItems(materialsTableBody),
     packaging: readLineItems(packagingTableBody),
+    shippingOverrideAmount,
+    addOns,
     repeatUnitEfficiency: CONFIG.pricing.repeatUnitEfficiency,
     safetyMargin: CONFIG.estimateSafetyMargin,
     marginTiers: CONFIG.pricing.marginTiers,
   });
 
-  renderResults(estimate, gramsOrMl, unitLabel, quote);
+  const agg = { gramsOrMl, unitLabel, totalHours, maxDim, anyMisfit, perPart };
+  state.lastQuote = quote;
+  state.lastAgg = agg;
+  renderResults(agg, quote);
 }
 
-function renderResults(estimate, gramsOrMl, unitLabel, quote) {
-  fitWarning.hidden = estimate.fits;
+function renderResults(agg, quote) {
+  fitWarning.hidden = !agg.anyMisfit;
 
-  outDimensions.textContent = `${fmtMm(estimate.bbox.x)} \u00D7 ${fmtMm(estimate.bbox.y)} \u00D7 ${fmtMm(estimate.bbox.z)}`;
-  outMaterial.textContent = fmtGrams(gramsOrMl, unitLabel);
-  outTime.textContent = fmtHours(estimate.hours);
-  outOrientation.textContent = estimate.orientationName;
+  if (agg.perPart.length === 1) {
+    outDimensions.textContent = fmtDims(agg.maxDim.x, agg.maxDim.y, agg.maxDim.z);
+  } else {
+    outDimensions.textContent = `${agg.perPart.length} parts, largest ${fmtDims(agg.maxDim.x, agg.maxDim.y, agg.maxDim.z)}`;
+  }
+  outMaterial.textContent = fmtGrams(agg.gramsOrMl, agg.unitLabel);
+  outTime.textContent = fmtHours(agg.totalHours);
+  const misfitCount = agg.perPart.filter((p) => !p.fits).length;
+  outParts.textContent = misfitCount > 0
+    ? `${agg.perPart.length} \u2014 ${misfitCount} won't fit`
+    : `${agg.perPart.length} \u2014 all fit`;
 
   bdMaterial.textContent = fmtMoney(quote.printedPartTotalCost);
   bdExtras.textContent = fmtMoney(quote.extraMaterialsCost);
   bdLabor.textContent = fmtMoney(quote.totalLaborCost);
   bdMachine.textContent = fmtMoney(quote.machineCost);
   bdPackaging.textContent = fmtMoney(quote.totalPackagingCost);
+  bdAddOnsRow.hidden = quote.addOnsCost <= 0;
+  bdAddOns.textContent = fmtMoney(quote.addOnsCost);
   bdLanded.textContent = fmtMoney(quote.landedCost);
 
   marginTiersEl.innerHTML = '';
-  quote.prices.forEach((p) => {
+  quote.prices.forEach((p, i) => {
     const card = document.createElement('div');
     card.className = 'margin-card';
     card.innerHTML = `<div class="margin-pct">${p.marginPercent.toFixed(0)}%</div><div class="margin-price">${fmtMoney(p.price)}</div>`;
+    card.addEventListener('click', () => openCustomerModal(i));
     marginTiersEl.appendChild(card);
   });
 }
+
+// ----------------------------------------------------------------------
+// CUSTOMER SHARE MODAL
+// ----------------------------------------------------------------------
+function openCustomerModal(tierIndex) {
+  if (!state.lastQuote || !state.lastAgg) return;
+  const cb = customerBreakdownForTier(state.lastQuote, tierIndex, CONFIG.estimateSafetyMargin);
+  const agg = state.lastAgg;
+
+  modalTitle.textContent = `Quote \u2014 ${cb.marginPercent.toFixed(0)}% tier`;
+  modalDims.textContent = agg.perPart.length === 1
+    ? fmtDims(agg.maxDim.x, agg.maxDim.y, agg.maxDim.z)
+    : `${agg.perPart.length} parts`;
+  modalTime.textContent = fmtHours(agg.totalHours);
+
+  modalBreakdown.innerHTML = `
+    <div class="breakdown-row"><span>Materials</span><span>${fmtMoney(cb.materials)}</span></div>
+    <div class="breakdown-row"><span>Labor</span><span>${fmtMoney(cb.labor)}</span></div>
+    <div class="breakdown-row"><span>Printing</span><span>${fmtMoney(cb.machine)}</span></div>
+    <div class="breakdown-row"><span>Packaging &amp; shipping</span><span>${fmtMoney(cb.packaging)}</span></div>
+    ${cb.addOns > 0 ? `<div class="breakdown-row"><span>Extras</span><span>${fmtMoney(cb.addOns)}</span></div>` : ''}
+    <div class="breakdown-row total"><span>Total</span><span>${fmtMoney(cb.total)}</span></div>
+  `;
+
+  modalCopyBtn.onclick = () => {
+    const lines = [
+      `Quote \u2014 ${agg.perPart.map((p) => p.name).join(', ')}`,
+      `Size: ${modalDims.textContent}`,
+      `Est. print time: ${modalTime.textContent}`,
+      `Materials: ${fmtMoney(cb.materials)}`,
+      `Labor: ${fmtMoney(cb.labor)}`,
+      `Printing: ${fmtMoney(cb.machine)}`,
+      `Packaging & shipping: ${fmtMoney(cb.packaging)}`,
+    ];
+    if (cb.addOns > 0) lines.push(`Extras: ${fmtMoney(cb.addOns)}`);
+    lines.push(`Total: ${fmtMoney(cb.total)}`);
+    const text = lines.join('\n');
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(() => {
+        modalCopyBtn.textContent = 'Copied!';
+        setTimeout(() => (modalCopyBtn.textContent = 'Copy quote as text'), 1500);
+      });
+    }
+  };
+
+  customerModal.hidden = false;
+  modalViewer.setGeometries(state.parts.map((p) => p.geometry.clone()));
+  modalViewer.start();
+  requestAnimationFrame(() => modalViewer.resize());
+}
+
+function closeCustomerModal() {
+  customerModal.hidden = true;
+  modalViewer.stop();
+}
+modalClose.addEventListener('click', closeCustomerModal);
+customerModal.addEventListener('click', (e) => {
+  if (e.target === customerModal) closeCustomerModal();
+});
 
 // ----------------------------------------------------------------------
 // INIT

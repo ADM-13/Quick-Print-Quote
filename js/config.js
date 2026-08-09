@@ -107,6 +107,27 @@ export const CONFIG = {
   },
 
   // --------------------------------------------------------------------
+  // FDM (P1S) SIZE TIERS — by longest bounding-box dimension, for postage
+  // defaults only (not a build-volume constraint — that's checked
+  // separately). ASSUMPTION: your 3x3x3 / 8x8x8 / 12x12x12 were inches
+  // (matches typical shipping box sizes) — edit maxDimMm below if you
+  // meant cm or something else.
+  //   small:  longest side < 3 in  (< 76.2 mm)
+  //   medium: longest side 3-8 in (76.2 - 203.2 mm)
+  //   large:  longest side > 8 in (> 203.2 mm) — 12x12x12 is the
+  //           reference "large" box, not a hard ceiling
+  // --------------------------------------------------------------------
+  sizeTiersFdm: {
+    small:  { maxDimMm: 76.2 },
+    medium: { maxDimMm: 203.2 },
+  },
+
+  // Default postage ($) by size tier — same small/medium/large labels as
+  // above, whichever tier system is active for the selected printer.
+  // Auto-fills the "Postage" packaging line; you can still edit it per job.
+  postageBySizeTier: { small: 6, medium: 8, large: 12 },
+
+  // --------------------------------------------------------------------
   // GEOMETRY / SLICING-HEURISTIC ASSUMPTIONS (FDM)
   // These stand in for a real slicer. All configurable — see README for
   // how to calibrate them against actual sliced jobs.
@@ -130,6 +151,29 @@ export const CONFIG = {
     // volume plus a support/raft allowance.
     supportVolumeFraction: 0.12, // supports as a fraction of net part volume
   },
+
+  // --------------------------------------------------------------------
+  // CUSTOM MATERIAL — starting values shown when someone picks "Custom"
+  // in the material dropdown. Purely a UI default, not a real material.
+  // --------------------------------------------------------------------
+  customMaterialDefaults: {
+    costPerUnit: 20,     // $/kg (FDM) or $/L (resin)
+    densityGcm3: 1.2,
+  },
+
+  // --------------------------------------------------------------------
+  // TOGGLEABLE EXTRAS — flat add-on fees the customer can opt into.
+  // type: 'addon' = flat fee added on top of landed cost.
+  // type: 'shipping-override' = replaces the Postage line entirely
+  // (only one shipping-override can be active at a time — the UI enforces
+  // that as radio-like behavior between the shipping options).
+  // --------------------------------------------------------------------
+  extras: [
+    { id: 'priority',     label: 'Priority order',      amount: 35, type: 'addon' },
+    { id: 'fineDetail',   label: 'Finer detail print',   amount: 20, type: 'addon' },
+    { id: 'ship2day',     label: '2-day shipping',       amount: 30, type: 'shipping-override' },
+    { id: 'shipNextDay',  label: 'Next day shipping',    amount: 90, type: 'shipping-override' },
+  ],
 
   // --------------------------------------------------------------------
   // BUSINESS / PRICING (ported directly from your spreadsheet)
