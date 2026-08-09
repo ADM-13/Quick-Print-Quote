@@ -21,6 +21,11 @@
 
 * { box-sizing: border-box; }
 
+/* The `hidden` attribute must always win, no matter what display value a
+   class sets elsewhere. Without this, any element that's both `hidden` and
+   styled with e.g. `display: flex` (modals, flex rows) stays visible. */
+[hidden] { display: none !important; }
+
 html, body {
   margin: 0;
   padding: 0;
