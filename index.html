@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+<title>Print Quote — 3D Print Pricing</title>
+<link rel="stylesheet" href="css/style.css" />
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+
+<div class="grain"></div>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="mark">⛁</div>
+    <div class="titleblock">
+      <h1>Print Quote</h1>
+      <p class="subtitle">Ballpark estimate → landed cost → margin pricing</p>
+    </div>
+  </div>
+</header>
+
+<main class="layout">
+
+  <!-- ============ STEP 1: FILE ============ -->
+  <section class="panel" id="panel-file">
+    <div class="panel-label"><span class="num">01</span> Part file</div>
+    <div class="dropzone" id="dropzone">
+      <input type="file" id="fileInput" accept=".stl,.obj,.3mf" hidden />
+      <div class="dropzone-content" id="dropzoneContent">
+        <div class="dz-icon">＋</div>
+        <div class="dz-text">Drop an STL, OBJ, or 3MF — or tap to choose</div>
+        <div class="dz-hint">STEP files aren't supported here — quote those manually.</div>
+      </div>
+    </div>
+    <div id="fileStatus" class="file-status"></div>
+  </section>
+
+  <!-- ============ STEP 2: PRINTER + MATERIAL ============ -->
+  <section class="panel" id="panel-setup" hidden>
+    <div class="panel-label"><span class="num">02</span> Printer &amp; material</div>
+
+    <div class="field-row">
+      <label>Printer</label>
+      <div class="segmented" id="printerSelect">
+        <button type="button" class="seg-btn active" data-printer="p1s">P1S (AMS)</button>
+        <button type="button" class="seg-btn" data-printer="photon">Photon Mono X 6K</button>
+      </div>
+    </div>
+
+    <div class="field-row">
+      <label>Material</label>
+      <select id="materialSelect"></select>
+    </div>
+
+    <div class="field-row" id="colorsRow">
+      <label>Colors used (AMS)</label>
+      <input type="number" id="colorsInput" min="1" max="8" value="1" />
+      <span class="field-hint" id="efficiencyHint"></span>
+    </div>
+
+    <div class="field-row" id="sizeTierRow" hidden>
+      <label>Part size tier</label>
+      <select id="sizeTierSelect">
+        <option value="small">Small</option>
+        <option value="medium">Medium</option>
+        <option value="large">Large</option>
+      </select>
+      <span class="field-hint" id="sizeTierHint"></span>
+    </div>
+
+    <div class="field-row">
+      <label>Quantity</label>
+      <input type="number" id="quantityInput" min="1" value="1" />
+      <span class="field-hint">Material &amp; print time scale fully. Labor &amp; packaging get a per-unit discount.</span>
+    </div>
+
+    <div class="field-row">
+      <label>Labor (min)</label>
+      <input type="number" id="laborInput" min="0" value="10" />
+      <span class="field-hint" id="laborHint"></span>
+    </div>
+  </section>
+
+  <!-- ============ STEP 3: EXTRA MATERIALS ============ -->
+  <section class="panel" id="panel-extras" hidden>
+    <div class="panel-label"><span class="num">03</span> Hardware / extra materials <span class="optional">optional</span></div>
+    <table class="line-table" id="materialsTable">
+      <thead><tr><th>Name</th><th>Qty</th><th>Unit cost</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <button type="button" class="add-row-btn" id="addMaterialRow">+ Add item</button>
+  </section>
+
+  <!-- ============ STEP 4: PACKAGING ============ -->
+  <section class="panel" id="panel-packaging" hidden>
+    <div class="panel-label"><span class="num">04</span> Packaging &amp; shipping</div>
+    <table class="line-table" id="packagingTable">
+      <thead><tr><th>Name</th><th>Qty</th><th>Unit cost</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <button type="button" class="add-row-btn" id="addPackagingRow">+ Add item</button>
+  </section>
+
+  <!-- ============ RESULTS ============ -->
+  <section class="panel results" id="panel-results" hidden>
+    <div class="panel-label"><span class="num">05</span> Quote</div>
+
+    <div class="fit-warning" id="fitWarning" hidden>
+      ⚠ Doesn't fit the build plate at any tested rotation — this part will need to be split. Estimate below is based on total material volume only.
+    </div>
+
+    <div class="readout-grid">
+      <div class="readout">
+        <div class="readout-label">Dimensions (best orientation)</div>
+        <div class="readout-value" id="outDimensions">—</div>
+      </div>
+      <div class="readout">
+        <div class="readout-label">Est. material</div>
+        <div class="readout-value" id="outMaterial">—</div>
+      </div>
+      <div class="readout">
+        <div class="readout-label">Est. print time</div>
+        <div class="readout-value" id="outTime">—</div>
+      </div>
+      <div class="readout">
+        <div class="readout-label">Orientation used</div>
+        <div class="readout-value" id="outOrientation">—</div>
+      </div>
+    </div>
+
+    <div class="breakdown">
+      <div class="breakdown-row"><span>Printed part material</span><span id="bdMaterial">—</span></div>
+      <div class="breakdown-row"><span>Extra hardware/materials</span><span id="bdExtras">—</span></div>
+      <div class="breakdown-row"><span>Labor</span><span id="bdLabor">—</span></div>
+      <div class="breakdown-row"><span>Machine (printer time)</span><span id="bdMachine">—</span></div>
+      <div class="breakdown-row"><span>Packaging &amp; shipping</span><span id="bdPackaging">—</span></div>
+      <div class="breakdown-row total"><span>Landed cost</span><span id="bdLanded">—</span></div>
+    </div>
+
+    <div class="margin-tiers" id="marginTiers"></div>
+
+    <p class="disclaimer">Ballpark estimate, biased high. Not a real slice — calibrate against actual prints in <code>js/config.js</code>.</p>
+  </section>
+
+</main>
+
+<script type="module" src="js/app.js"></script>
+
+</body>
+</html>
