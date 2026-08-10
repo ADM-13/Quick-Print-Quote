@@ -20,7 +20,13 @@ anywhere — all analysis happens in your phone's browser.
   Photon, by bounding-box dimension for the P1S — which drives default
   labor and postage, all overridable
 - Custom material option if you're quoting something outside your usual
-  filament/resin
+  filament/resin — just a cost, no density prompt (assumes a standard ~1kg
+  spool at typical filament density internally)
+- "Quote by size instead" — for when someone gives you dimensions with no
+  file. Enter L x W x H (mm or inches) and it's treated as a solid block of
+  that size, run through the same estimate pipeline. Deliberately
+  conservative (a solid block is the max possible material for that
+  envelope), which fits an "err high with no real file" situation.
 - mm/inches toggle for all displayed dimensions
 - Toggleable add-ons (Priority order, Finer detail print) and shipping
   upgrades (2-day/next-day, which replace the postage line rather than
@@ -45,11 +51,11 @@ for a phone tool, but worth knowing).
 
 ### Updating the app after the first deploy
 
-`index.html` loads `css/style.css` and `js/app.js` with a `?v=3` on the end.
+`index.html` loads `css/style.css` and `js/app.js` with a `?v=5` on the end.
 That's a cache-buster — without it, browsers (and GitHub Pages' own CDN)
 can keep serving an old cached copy of those files even after you've pushed
 new ones, which looks exactly like "I made the change but nothing's
-different." **Bump that number (`?v=4`, `?v=5`, ...) every time you push an
+different." **Bump that number (`?v=6`, `?v=7`, ...) every time you push an
 update** to force a fresh fetch. If something still looks unchanged after a
 version bump, try a hard refresh (Ctrl/Cmd+Shift+R) or an incognito/private
 window to rule out the browser cache specifically.

@@ -40,6 +40,13 @@ const fileInput = el('fileInput');
 const fileStatus = el('fileStatus');
 const partsList = el('partsList');
 const resetBtn = el('resetBtn');
+const sizeOnlyToggle = el('sizeOnlyToggle');
+const sizeOnlyForm = el('sizeOnlyForm');
+const sizeOnlyX = el('sizeOnlyX');
+const sizeOnlyY = el('sizeOnlyY');
+const sizeOnlyZ = el('sizeOnlyZ');
+const sizeOnlyUnit = el('sizeOnlyUnit');
+const addSizeOnlyBtn = el('addSizeOnlyBtn');
 
 const panelPreview = el('panel-preview');
 const panelSetup = el('panel-setup');
@@ -53,8 +60,6 @@ const materialSelect = el('materialSelect');
 const customMaterialRow = el('customMaterialRow');
 const customCostInput = el('customCostInput');
 const customCostHint = el('customCostHint');
-const customDensityRow = el('customDensityRow');
-const customDensityInput = el('customDensityInput');
 const colorsRow = el('colorsRow');
 const colorsInput = el('colorsInput');
 const efficiencyHint = el('efficiencyHint');
@@ -101,6 +106,7 @@ const modalCopyBtn = el('modalCopyBtn');
 // FORMATTERS
 // ----------------------------------------------------------------------
 const fmtMoney = (n) => `$${n.toFixed(2)}`;
+const fmtWhole = (n) => `$${Math.round(n)}`;
 const fmtGrams = (n, unit) => `${n.toFixed(1)} ${unit}`;
 const fmtHours = (h) => {
   const totalMin = Math.round(h * 60);
@@ -114,14 +120,14 @@ const fmtDims = (x, y, z) => `${fmtLen(x)} \u00D7 ${fmtLen(y)} \u00D7 ${fmtLen(z
 // ----------------------------------------------------------------------
 // 3D VIEWER (used for both the inline preview and the customer modal)
 // ----------------------------------------------------------------------
-function createViewer(canvas) {
+function createViewer(canvas, { autoRotate = true } = {}) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(35, 1, 1, 10000);
   const controls = new OrbitControls(camera, renderer.domElement);
-  controls.autoRotate = true;
+  controls.autoRotate = autoRotate;
   controls.autoRotateSpeed = 2.4;
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
@@ -211,7 +217,7 @@ function createViewer(canvas) {
 }
 
 const mainViewer = createViewer(viewerCanvas);
-const modalViewer = createViewer(modalViewerCanvas);
+const modalViewer = createViewer(modalViewerCanvas, { autoRotate: false });
 
 function refreshViewer() {
   if (state.parts.length === 0) {
@@ -299,10 +305,12 @@ function renderPartsList() {
   partsList.innerHTML = '';
   state.parts.forEach((part) => {
     const li = document.createElement('li');
-    const triCount = part.geometry.attributes.position.count / 3;
+    const meta = part.isSizeOnly
+      ? 'size-only estimate'
+      : `${(part.geometry.attributes.position.count / 3).toLocaleString()} tri`;
     li.innerHTML = `
       <span class="part-name">${part.name}</span>
-      <span class="part-meta">${triCount.toLocaleString()} tri</span>
+      <span class="part-meta">${meta}</span>
       <button type="button" class="part-remove" title="Remove">\u2715</button>
     `;
     li.querySelector('.part-remove').addEventListener('click', () => {
@@ -360,6 +368,65 @@ function afterPartsChanged() {
 }
 
 // ----------------------------------------------------------------------
+// SIZE-ONLY QUOTING (no file — just customer-given dimensions)
+// ----------------------------------------------------------------------
+sizeOnlyToggle.addEventListener('click', () => {
+  sizeOnlyForm.hidden = !sizeOnlyForm.hidden;
+});
+
+sizeOnlyUnit.querySelectorAll('.seg-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    sizeOnlyUnit.querySelectorAll('.seg-btn').forEach((b) => b.classList.remove('active'));
+    btn.classList.add('active');
+  });
+});
+
+function addSizeOnlyPart() {
+  const unit = sizeOnlyUnit.querySelector('.seg-btn.active').dataset.unit;
+  const toMm = (v) => (unit === 'in' ? v * 25.4 : v);
+  const x = toMm(parseFloat(sizeOnlyX.value) || 0);
+  const y = toMm(parseFloat(sizeOnlyY.value) || 0);
+  const z = toMm(parseFloat(sizeOnlyZ.value) || 0);
+
+  if (x <= 0 || y <= 0 || z <= 0) {
+    fileStatus.textContent = 'Enter all three dimensions (greater than 0).';
+    fileStatus.className = 'file-status warn';
+    return;
+  }
+
+  // Treated as a solid block of that size — the max possible volume for
+  // that envelope, so it's a deliberately conservative (high) stand-in for
+  // not having the actual file. Runs through the exact same shell/infill/
+  // support math as a real mesh.
+  const group = new THREE.Group();
+  group.add(new THREE.Mesh(new THREE.BoxGeometry(x, y, z)));
+  const geometry = mergeToSingleGeometry(group);
+
+  const dimLabel = unit === 'in'
+    ? `${(x / 25.4).toFixed(2)}" \u00D7 ${(y / 25.4).toFixed(2)}" \u00D7 ${(z / 25.4).toFixed(2)}"`
+    : `${x.toFixed(0)}mm \u00D7 ${y.toFixed(0)}mm \u00D7 ${z.toFixed(0)}mm`;
+
+  state.parts.push({ id: nextPartId++, name: `Size-only block (${dimLabel})`, geometry, isSizeOnly: true });
+
+  // Keep the displayed unit system in sync with whichever the user just
+  // used to enter dimensions.
+  state.unitSystem = unit;
+  unitSelect.querySelectorAll('.seg-btn').forEach((b) => b.classList.toggle('active', b.dataset.unit === unit));
+
+  sizeOnlyX.value = '';
+  sizeOnlyY.value = '';
+  sizeOnlyZ.value = '';
+
+  fileStatus.textContent = `${state.parts.length} part${state.parts.length === 1 ? '' : 's'} loaded`;
+  fileStatus.className = 'file-status ok';
+
+  renderPartsList();
+  afterPartsChanged();
+}
+
+addSizeOnlyBtn.addEventListener('click', addSizeOnlyPart);
+
+// ----------------------------------------------------------------------
 // DROPZONE
 // ----------------------------------------------------------------------
 dropzone.addEventListener('click', () => fileInput.click());
@@ -405,6 +472,14 @@ resetBtn.addEventListener('click', () => {
   fileStatus.className = 'file-status';
   partsList.innerHTML = '';
 
+  sizeOnlyForm.hidden = true;
+  sizeOnlyX.value = '';
+  sizeOnlyY.value = '';
+  sizeOnlyZ.value = '';
+  sizeOnlyUnit.querySelectorAll('.seg-btn').forEach((b, i) => b.classList.toggle('active', i === 0));
+  state.unitSystem = 'mm';
+  unitSelect.querySelectorAll('.seg-btn').forEach((b, i) => b.classList.toggle('active', i === 0));
+
   refreshAddonToggleStyles();
   populateMaterialsForPrinter();
   applyLaborDefault();
@@ -443,7 +518,6 @@ function updateCustomMaterialVisibility() {
   const isFdm = currentPrinterCfg().type === 'fdm';
   const isCustom = materialSelect.value === '__custom__';
   customMaterialRow.hidden = !isCustom;
-  customDensityRow.hidden = !isCustom || !isFdm;
   customCostHint.textContent = isFdm ? '$/kg' : '$/Liter';
 }
 
@@ -551,7 +625,6 @@ materialSelect.addEventListener('change', () => {
   recalculate();
 });
 customCostInput.addEventListener('input', recalculate);
-customDensityInput.addEventListener('input', recalculate);
 quantityInput.addEventListener('input', recalculate);
 
 unitSelect.querySelectorAll('.seg-btn').forEach((btn) => {
@@ -655,8 +728,12 @@ function currentMaterialCfg() {
   const isFdm = printerCfg.type === 'fdm';
   if (materialSelect.value === '__custom__') {
     const cost = parseFloat(customCostInput.value) || 0;
-    const density = parseFloat(customDensityInput.value) || 1.2;
-    return isFdm ? { costPerKg: cost, densityGcm3: density } : { costPerLiter: cost };
+    // Density isn't asked for — custom FDM materials are assumed to be a
+    // standard ~1kg spool at typical filament density (config-tunable, not
+    // shown in the UI since $/kg is what people actually think in).
+    return isFdm
+      ? { costPerKg: cost, densityGcm3: CONFIG.customMaterialDefaults.densityGcm3 }
+      : { costPerLiter: cost };
   }
   return printerCfg.materials[materialSelect.value];
 }
@@ -724,6 +801,7 @@ function recalculate() {
     repeatUnitEfficiency: CONFIG.pricing.repeatUnitEfficiency,
     safetyMargin: CONFIG.estimateSafetyMargin,
     marginTiers: CONFIG.pricing.marginTiers,
+    fiverrFeePercent: CONFIG.pricing.fiverrFeePercent,
   });
 
   const agg = { gramsOrMl, unitLabel, totalHours, maxDim, anyMisfit, perPart };
@@ -760,7 +838,12 @@ function renderResults(agg, quote) {
   quote.prices.forEach((p, i) => {
     const card = document.createElement('div');
     card.className = 'margin-card';
-    card.innerHTML = `<div class="margin-pct">${p.marginPercent.toFixed(0)}%</div><div class="margin-price">${fmtMoney(p.price)}</div>`;
+    card.innerHTML = `
+      <div class="margin-pct">${p.marginPercent.toFixed(0)}%</div>
+      <div class="margin-price">${fmtWhole(p.price)}</div>
+      <div class="margin-sub">Fiverr \u2212${fmtMoney(p.fiverrFee)}</div>
+      <div class="margin-profit">${fmtMoney(p.profit)} profit</div>
+    `;
     card.addEventListener('click', () => openCustomerModal(i));
     marginTiersEl.appendChild(card);
   });
@@ -771,10 +854,10 @@ function renderResults(agg, quote) {
 // ----------------------------------------------------------------------
 function openCustomerModal(tierIndex) {
   if (!state.lastQuote || !state.lastAgg) return;
-  const cb = customerBreakdownForTier(state.lastQuote, tierIndex, CONFIG.estimateSafetyMargin);
+  const cb = customerBreakdownForTier(state.lastQuote, tierIndex);
   const agg = state.lastAgg;
 
-  modalTitle.textContent = `Quote \u2014 ${cb.marginPercent.toFixed(0)}% tier`;
+  modalTitle.textContent = 'Your Quote';
   modalDims.textContent = agg.perPart.length === 1
     ? fmtDims(agg.maxDim.x, agg.maxDim.y, agg.maxDim.z)
     : `${agg.perPart.length} parts`;
@@ -786,7 +869,7 @@ function openCustomerModal(tierIndex) {
     <div class="breakdown-row"><span>Printing</span><span>${fmtMoney(cb.machine)}</span></div>
     <div class="breakdown-row"><span>Packaging &amp; shipping</span><span>${fmtMoney(cb.packaging)}</span></div>
     ${cb.addOns > 0 ? `<div class="breakdown-row"><span>Extras</span><span>${fmtMoney(cb.addOns)}</span></div>` : ''}
-    <div class="breakdown-row total"><span>Total</span><span>${fmtMoney(cb.total)}</span></div>
+    <div class="breakdown-row total"><span>Total</span><span>${fmtWhole(cb.total)}</span></div>
   `;
 
   modalCopyBtn.onclick = () => {
@@ -800,7 +883,7 @@ function openCustomerModal(tierIndex) {
       `Packaging & shipping: ${fmtMoney(cb.packaging)}`,
     ];
     if (cb.addOns > 0) lines.push(`Extras: ${fmtMoney(cb.addOns)}`);
-    lines.push(`Total: ${fmtMoney(cb.total)}`);
+    lines.push(`Total: ${fmtWhole(cb.total)}`);
     const text = lines.join('\n');
     if (navigator.clipboard) {
       navigator.clipboard.writeText(text).then(() => {

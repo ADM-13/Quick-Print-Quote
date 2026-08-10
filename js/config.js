@@ -189,6 +189,9 @@ export const CONFIG = {
     // a full unit. 0.5 = each extra unit costs half as much labor/packaging
     // as the first. 1.0 = no discount (fully linear). Tune to taste.
     repeatUnitEfficiency: 0.5,
+    // Fiverr's cut of whatever you actually charge, used only to show
+    // your own take-home profit per tier — never shown to the customer.
+    fiverrFeePercent: 0.20,
   },
 
   // Bias factor applied to the FINAL material + time estimate before

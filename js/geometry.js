@@ -58,8 +58,15 @@ function computeMeshStats(geometry) {
 
 /**
  * Overhang-facing surface area (mm^2) once the mesh is rotated by `quat`.
- * Heuristic (see README): a triangle counts as overhang if its rotated
- * normal points within `thresholdDeg` of straight down.
+ *
+ * Support is needed when a wall leans more than `thresholdDeg` FROM
+ * VERTICAL (the standard slicer definition — 45deg is the common default).
+ * That's equivalent to checking the face normal's angle from straight
+ * down: wall-angle-from-vertical = 90deg - normal-angle-from-down, so
+ * "overhang > 45deg from vertical" becomes "normal-angle-from-down < 45deg"
+ * here. A perfectly vertical wall has a sideways-pointing normal (90deg
+ * from down, no support needed); a flat ceiling's normal points straight
+ * down (0deg from down, definitely needs support).
  */
 function computeOverhangArea(geometry, quat, thresholdDeg) {
   let overhangArea = 0;
@@ -83,7 +90,7 @@ function computeOverhangArea(geometry, quat, thresholdDeg) {
     if (triArea === 0) return;
     normal.normalize();
     const angleFromDown = normal.angleTo(down);
-    if (angleFromDown <= thresholdRad) {
+    if (angleFromDown < thresholdRad) {
       overhangArea += triArea;
     }
   });

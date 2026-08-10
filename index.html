@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
 <title>Print Quote — 3D Print Pricing</title>
-<link rel="stylesheet" href="css/style.css?v=3" />
+<link rel="stylesheet" href="css/style.css?v=5" />
 <script type="importmap">
 {
   "imports": {
@@ -44,6 +44,22 @@
     </div>
     <div id="fileStatus" class="file-status"></div>
     <ul class="parts-list" id="partsList"></ul>
+
+    <div class="size-only-toggle" id="sizeOnlyToggle">+ No file? Quote by size instead</div>
+    <div class="size-only-form" id="sizeOnlyForm" hidden>
+      <div class="field-row">
+        <label>Dimensions</label>
+        <input type="number" id="sizeOnlyX" min="0" step="0.1" placeholder="L" style="flex:1" />
+        <input type="number" id="sizeOnlyY" min="0" step="0.1" placeholder="W" style="flex:1" />
+        <input type="number" id="sizeOnlyZ" min="0" step="0.1" placeholder="H" style="flex:1" />
+        <div class="segmented" id="sizeOnlyUnit" style="flex:0 0 110px">
+          <button type="button" class="seg-btn active" data-unit="mm">mm</button>
+          <button type="button" class="seg-btn" data-unit="in">in</button>
+        </div>
+      </div>
+      <div class="field-hint">Treated as a solid block that size — a conservative (high) stand-in for not having the actual file.</div>
+      <button type="button" class="add-row-btn" id="addSizeOnlyBtn">+ Add as a part</button>
+    </div>
   </section>
 
   <!-- ============ PREVIEW ============ -->
@@ -73,11 +89,6 @@
       <label>Custom cost</label>
       <input type="number" id="customCostInput" min="0" step="0.01" value="20" />
       <span class="field-hint" id="customCostHint"></span>
-    </div>
-    <div class="field-row" id="customDensityRow" hidden>
-      <label>Custom density</label>
-      <input type="number" id="customDensityInput" min="0.1" step="0.01" value="1.2" />
-      <span class="field-hint">g/cm&sup3; — only affects FDM gram estimate</span>
     </div>
 
     <div class="field-row" id="colorsRow">
@@ -209,7 +220,7 @@
   </div>
 </div>
 
-<script type="module" src="js/app.js?v=3"></script>
+<script type="module" src="js/app.js?v=5"></script>
 
 </body>
 </html>
