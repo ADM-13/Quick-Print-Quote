@@ -27,6 +27,7 @@ const state = {
   unitSystem: 'mm',       // 'mm' | 'in'
   activeAddonIds: new Set(),
   activeShippingOverrideId: null,
+  resinTier: 'small',     // auto-calculated, no longer user-editable
   lastQuote: null,
   lastAgg: null,          // aggregated estimate across all parts
 };
@@ -63,9 +64,6 @@ const customCostHint = el('customCostHint');
 const colorsRow = el('colorsRow');
 const colorsInput = el('colorsInput');
 const efficiencyHint = el('efficiencyHint');
-const sizeTierRow = el('sizeTierRow');
-const sizeTierSelect = el('sizeTierSelect');
-const sizeTierHint = el('sizeTierHint');
 const quantityInput = el('quantityInput');
 const laborInput = el('laborInput');
 const laborHint = el('laborHint');
@@ -98,6 +96,7 @@ const modalClose = el('modalClose');
 const modalViewerCanvas = el('modalViewerCanvas');
 const modalTitle = el('modalTitle');
 const modalDims = el('modalDims');
+const modalMaterial = el('modalMaterial');
 const modalTime = el('modalTime');
 const modalBreakdown = el('modalBreakdown');
 const modalCopyBtn = el('modalCopyBtn');
@@ -510,7 +509,6 @@ function currentPrinterCfg() {
 function toggleRowsForPrinterType() {
   const isFdm = currentPrinterCfg().type === 'fdm';
   colorsRow.hidden = !isFdm;
-  sizeTierRow.hidden = isFdm;
   updateCustomMaterialVisibility();
 }
 
@@ -550,7 +548,7 @@ function applyLaborDefault() {
     laborInput.value = printerCfg.baseLaborMinutes;
     laborHint.textContent = `Default for ${printerCfg.name}`;
   } else {
-    const tier = sizeTierSelect.value;
+    const tier = state.resinTier;
     laborInput.value = printerCfg.laborBySizeTier[tier];
     laborHint.textContent = `${tier[0].toUpperCase()}${tier.slice(1)} resin part default (wash/cure/support setup)`;
   }
@@ -586,8 +584,7 @@ function updateDerivedDefaults() {
   if (anyFail) return;
 
   const resinTier = sizeTierForVolume(resinTotalVolumeMm3 / 1000, CONFIG.sizeTiers);
-  sizeTierSelect.value = resinTier;
-  sizeTierHint.textContent = `Suggested from est. resin needed (${(resinTotalVolumeMm3 / 1e6).toFixed(2)} L) \u2014 override if needed`;
+  state.resinTier = resinTier;
 
   const fdmTier = sizeTierForDimension(maxDimMm, CONFIG.sizeTiersFdm);
   const activeTier = currentPrinterCfg().type === 'fdm' ? fdmTier : resinTier;
@@ -604,14 +601,6 @@ colorsInput.addEventListener('input', () => {
     n
   );
   efficiencyHint.textContent = `Efficiency multiplier: ${factor.toFixed(2)}x`;
-  recalculate();
-});
-
-sizeTierSelect.addEventListener('change', () => {
-  if (!state.laborTouchedByUser) applyLaborDefault();
-  if (!state.postageTouchedByUser && currentPrinterCfg().type === 'resin') {
-    applyPostageDefault(sizeTierSelect.value);
-  }
   recalculate();
 });
 
@@ -857,10 +846,12 @@ function openCustomerModal(tierIndex) {
   const cb = customerBreakdownForTier(state.lastQuote, tierIndex);
   const agg = state.lastAgg;
 
-  modalTitle.textContent = 'Your Quote';
+  const today = new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  modalTitle.textContent = `Quote \u2014 ${today}`;
   modalDims.textContent = agg.perPart.length === 1
     ? fmtDims(agg.maxDim.x, agg.maxDim.y, agg.maxDim.z)
     : `${agg.perPart.length} parts`;
+  modalMaterial.textContent = fmtGrams(agg.gramsOrMl, agg.unitLabel);
   modalTime.textContent = fmtHours(agg.totalHours);
 
   modalBreakdown.innerHTML = `
@@ -874,8 +865,9 @@ function openCustomerModal(tierIndex) {
 
   modalCopyBtn.onclick = () => {
     const lines = [
-      `Quote \u2014 ${agg.perPart.map((p) => p.name).join(', ')}`,
+      `Quote \u2014 ${today}`,
       `Size: ${modalDims.textContent}`,
+      `Material used: ${modalMaterial.textContent}`,
       `Est. print time: ${modalTime.textContent}`,
       `Materials: ${fmtMoney(cb.materials)}`,
       `Labor: ${fmtMoney(cb.labor)}`,

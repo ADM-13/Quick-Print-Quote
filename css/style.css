@@ -625,6 +625,8 @@ html, body {
 }
 
 .readout-grid.small {
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
   margin-bottom: 14px;
 }
+.readout-grid.small .readout-value { font-size: 13px; }

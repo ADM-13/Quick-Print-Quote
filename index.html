@@ -4,7 +4,21 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
 <title>Print Quote — 3D Print Pricing</title>
-<link rel="stylesheet" href="css/style.css?v=6" />
+<link rel="stylesheet" href="css/style.css?v=7" />
+<script>
+  // ES module imports (used throughout this app) are silently blocked by
+  // browsers when a page is opened directly as a local file instead of
+  // through a real server — nothing below this point will work in that
+  // case. This check runs regardless, so at least the reason is visible.
+  if (location.protocol === 'file:') {
+    document.addEventListener('DOMContentLoaded', () => {
+      const banner = document.createElement('div');
+      banner.style.cssText = 'position:fixed;inset:0;z-index:9999;background:#14181b;color:#ffb020;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;font-family:sans-serif;font-size:15px;line-height:1.6;';
+      banner.innerHTML = '\u26A0\uFE0F This page won\u2019t work opened directly as a file.<br>Open it through your GitHub Pages URL (https://your-username.github.io/your-repo/) instead \u2014 browsers block this app\u2019s scripts from running over a plain file:// link.';
+      document.body.appendChild(banner);
+    });
+  }
+</script>
 <script type="importmap">
 {
   "imports": {
@@ -214,7 +228,7 @@
   </div>
 </div>
 
-<script type="module" src="js/app.js?v=6"></script>
+<script type="module" src="js/app.js?v=7"></script>
 
 </body>
 </html>

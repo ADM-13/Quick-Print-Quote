@@ -39,6 +39,13 @@ anywhere — all analysis happens in your phone's browser.
 
 ## Deploy it (free, GitHub Pages)
 
+**Important: this app must be opened through a real URL (like the GitHub
+Pages one below), never by double-clicking `index.html` or dragging it into
+a browser tab.** Browsers block this app's scripts entirely when opened as
+a local file — not one broken feature, everything at once (buttons do
+nothing, dropdowns don't populate, nothing calculates). The app now shows
+an on-screen warning if this happens, but it's worth knowing up front.
+
 1. Create a new GitHub repo (public — GitHub Pages on a free account requires public repos).
 2. Upload everything in this folder (`index.html`, `css/`, `js/`) to the repo root.
 3. In the repo: **Settings → Pages → Source → Deploy from branch → main → / (root)**.
@@ -51,11 +58,11 @@ for a phone tool, but worth knowing).
 
 ### Updating the app after the first deploy
 
-`index.html` loads `css/style.css` and `js/app.js` with a `?v=6` on the end.
+`index.html` loads `css/style.css` and `js/app.js` with a `?v=7` on the end.
 That's a cache-buster — without it, browsers (and GitHub Pages' own CDN)
 can keep serving an old cached copy of those files even after you've pushed
 new ones, which looks exactly like "I made the change but nothing's
-different." **Bump that number (`?v=6`, `?v=7`, ...) every time you push an
+different." **Bump that number (`?v=8`, `?v=9`, ...) every time you push an
 update** to force a fresh fetch. If something still looks unchanged after a
 version bump, try a hard refresh (Ctrl/Cmd+Shift+R) or an incognito/private
 window to rule out the browser cache specifically.

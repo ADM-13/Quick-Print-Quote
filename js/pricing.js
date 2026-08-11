@@ -71,18 +71,25 @@ function calculateQuote(p) {
   const addOnsCost = (p.addOns || []).reduce((sum, a) => sum + a.amount, 0);
 
   // Landed cost (mirrors G45): the actual production cost, with the
-  // "err high" safety margin applied. This is the cost basis the profit
-  // margin gets applied to — add-ons are NOT part of it.
+  // "err high" safety margin applied. Add-ons are NOT part of it.
   const landedCostRaw = totalMaterialsCost + totalLaborCost + totalPackagingCost + machineCost;
   const landedCost = landedCostRaw * p.safetyMargin;
 
-  // Margin-tier pricing (mirrors G49/G51/G53: price = cost / (1 - margin),
-  // then add-ons added flat on top). Rounded to the nearest dollar for a
-  // cleaner customer-facing number — everything downstream (Fiverr fee,
-  // your profit) is computed off that rounded, actually-charged price.
+  // The profit margin (50/60/70%) is applied ONLY to materials + machine
+  // (printer depreciation) cost. Labor and packaging pass through at cost
+  // (still safety-margin-adjusted, just no profit on top) — that's a
+  // deliberate business choice, not a rounding artifact.
+  const marginableCost = (totalMaterialsCost + machineCost) * p.safetyMargin;
+  const passThroughCost = (totalLaborCost + totalPackagingCost) * p.safetyMargin;
+
+  // Margin-tier pricing: profit margin divides into the marginable cost,
+  // pass-through cost and add-ons are added flat on top. Rounded to the
+  // nearest dollar for a cleaner customer-facing number — everything
+  // downstream (Fiverr fee, your profit) is computed off that rounded,
+  // actually-charged price.
   const fiverrFeePercent = p.fiverrFeePercent ?? 0;
   const prices = p.marginTiers.map((m) => {
-    const rawPrice = landedCost / (1 - m) + addOnsCost;
+    const rawPrice = marginableCost / (1 - m) + passThroughCost + addOnsCost;
     const price = Math.round(rawPrice);
     const fiverrFee = price * fiverrFeePercent;
     // Add-ons are treated as ~zero extra cost to you (pure upsell), so
@@ -102,27 +109,30 @@ function calculateQuote(p) {
     addOnsCost,
     landedCostRaw,
     landedCost,
+    marginableCost,
+    passThroughCost,
     prices,
   };
 }
 
 /**
- * Customer-facing breakdown for one margin tier. Packaging/shipping and
- * add-ons are shown 1:1 (no profit margin applied) — the entire margin is
- * instead folded proportionally into materials, labor, and printing so the
+ * Customer-facing breakdown for one margin tier. Labor and packaging are
+ * shown 1:1 (cost, no profit margin) — the entire profit margin is folded
+ * proportionally into materials and printing (machine cost) only, so the
  * lines still sum exactly to that tier's (rounded) price. No margin
  * percent or landed cost is exposed.
  */
 function customerBreakdownForTier(quote, tierIndex) {
   const tier = quote.prices[tierIndex];
+  const labor = quote.totalLaborCost;
   const packaging = quote.totalPackagingCost;
   const addOns = quote.addOnsCost;
-  const remaining = tier.price - packaging - addOns;
-  const rawSum = quote.totalMaterialsCost + quote.totalLaborCost + quote.machineCost;
+  const remaining = tier.price - labor - packaging - addOns;
+  const rawSum = quote.totalMaterialsCost + quote.machineCost;
   const factor = rawSum > 0 ? remaining / rawSum : 0;
   return {
     materials: quote.totalMaterialsCost * factor,
-    labor: quote.totalLaborCost * factor,
+    labor,
     machine: quote.machineCost * factor,
     packaging,
     addOns,
