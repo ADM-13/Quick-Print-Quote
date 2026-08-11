@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
 <title>Print Quote — 3D Print Pricing</title>
-<link rel="stylesheet" href="css/style.css?v=5" />
+<link rel="stylesheet" href="css/style.css?v=6" />
 <script type="importmap">
 {
   "imports": {
@@ -95,16 +95,6 @@
       <label>Colors used (AMS)</label>
       <input type="number" id="colorsInput" min="1" max="8" value="1" />
       <span class="field-hint" id="efficiencyHint"></span>
-    </div>
-
-    <div class="field-row" id="sizeTierRow" hidden>
-      <label>Part size tier</label>
-      <select id="sizeTierSelect">
-        <option value="small">Small</option>
-        <option value="medium">Medium</option>
-        <option value="large">Large</option>
-      </select>
-      <span class="field-hint" id="sizeTierHint"></span>
     </div>
 
     <div class="field-row">
@@ -211,6 +201,10 @@
         <div class="readout-value" id="modalDims">—</div>
       </div>
       <div class="readout">
+        <div class="readout-label">Material used</div>
+        <div class="readout-value" id="modalMaterial">—</div>
+      </div>
+      <div class="readout">
         <div class="readout-label">Est. print time</div>
         <div class="readout-value" id="modalTime">—</div>
       </div>
@@ -220,7 +214,7 @@
   </div>
 </div>
 
-<script type="module" src="js/app.js?v=5"></script>
+<script type="module" src="js/app.js?v=6"></script>
 
 </body>
 </html>

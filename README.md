@@ -51,7 +51,7 @@ for a phone tool, but worth knowing).
 
 ### Updating the app after the first deploy
 
-`index.html` loads `css/style.css` and `js/app.js` with a `?v=5` on the end.
+`index.html` loads `css/style.css` and `js/app.js` with a `?v=6` on the end.
 That's a cache-buster — without it, browsers (and GitHub Pages' own CDN)
 can keep serving an old cached copy of those files even after you've pushed
 new ones, which looks exactly like "I made the change but nothing's
