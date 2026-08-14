@@ -743,7 +743,7 @@ function recalculate() {
   state.parts.forEach((part) => {
     const est = isFdm
       ? estimateFDM(part.geometry, printerCfg, CONFIG.fdmEstimate)
-      : estimateResin(part.geometry, printerCfg, CONFIG.resinEstimate);
+      : estimateResin(part.geometry, printerCfg, CONFIG.resinEstimate, state.resinTier);
     totalVolumeMm3 += est.totalVolumeMm3;
     totalHours += est.hours;
     if (!est.fits) anyMisfit = true;

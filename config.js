@@ -146,10 +146,18 @@ export const CONFIG = {
   },
 
   resinEstimate: {
-    // Resin prints are mostly hollowed + supported in practice, but for a
-    // ballpark client-side estimate we treat the part as the sliced solid
-    // volume plus a support/raft allowance.
-    supportVolumeFraction: 0.12, // supports as a fraction of net part volume
+    // Resin prints are mostly hollowed + supported in practice. Assuming a
+    // fully solid part (the old behavior here) badly overestimates material
+    // on anything but small parts — real resin workflows hollow to a thin
+    // shell to save resin, often a 70-90% material cut on bigger prints.
+    supportVolumeFraction: 0.12, // supports as a fraction of the (now-hollowed) part volume
+    hollowWallMm: 2.5,           // shell thickness once hollowed
+    // Fraction of the INTERIOR (volume beyond the shell) that's actually
+    // filled. Small parts are commonly left solid (not worth the drain-hole
+    // hassle to save a few grams); medium/large get hollowed with little to
+    // no interior infill — resin parts get their strength from the shell
+    // itself, unlike FDM, so there's no structural need to fill the inside.
+    interiorFillBySizeTier: { small: 1.0, medium: 0.05, large: 0.02 },
   },
 
   // --------------------------------------------------------------------

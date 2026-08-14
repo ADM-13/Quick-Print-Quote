@@ -32,9 +32,12 @@ anywhere — all analysis happens in your phone's browser.
   upgrades (2-day/next-day, which replace the postage line rather than
   stacking with it)
 - Tap any margin price to get a customer-shareable view: a part photo,
-  size, print time, and marked-up cost breakdown — no landed cost, no
-  orientation info — plus a "copy as text" button for pasting into Fiverr
-  chat
+  size, material used, and print time, plus a cost breakdown — labor and
+  packaging/shipping shown at exact cost, with the margin folded into the
+  materials and printing lines instead (so the total still matches what
+  you're actually charging, it's just displayed differently). No landed
+  cost, no orientation info, no margin percentage shown — plus a "copy as
+  text" button for pasting into Fiverr chat
 - Reset button to clear everything and start the next job fresh
 
 ## Deploy it (free, GitHub Pages)
@@ -58,7 +61,7 @@ for a phone tool, but worth knowing).
 
 ### Updating the app after the first deploy
 
-`index.html` loads `css/style.css` and `js/app.js` with a `?v=7` on the end.
+`index.html` loads `css/style.css` and `js/app.js` with a `?v=8` on the end.
 That's a cache-buster — without it, browsers (and GitHub Pages' own CDN)
 can keep serving an old cached copy of those files even after you've pushed
 new ones, which looks exactly like "I made the change but nothing's
@@ -81,8 +84,11 @@ practical. Instead:
 - **Material estimate (FDM)**: shell volume (surface area × wall loops ×
   nozzle width) + infill volume (remaining volume × infill %) + a support
   estimate from overhang area. All the multipliers are in `js/config.js`.
-- **Material estimate (resin)**: net volume + a flat support-volume
-  percentage.
+- **Material estimate (resin)**: hollowed volume (shell wall + a small
+  interior fill for medium/large parts, solid for small ones, matching how
+  resin is actually sliced in practice) + a flat support-volume allowance.
+  Small parts are left solid since hollowing them isn't usually worth the
+  hassle; medium/large parts assume near-zero interior fill once hollowed.
 - **Print time**: a volumetric-flow heuristic for FDM, layer-count ×
   exposure time for resin. **This is the least reliable number** — time
   depends heavily on speed/quality settings that geometry alone can't tell

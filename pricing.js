@@ -75,21 +75,18 @@ function calculateQuote(p) {
   const landedCostRaw = totalMaterialsCost + totalLaborCost + totalPackagingCost + machineCost;
   const landedCost = landedCostRaw * p.safetyMargin;
 
-  // The profit margin (50/60/70%) is applied ONLY to materials + machine
-  // (printer depreciation) cost. Labor and packaging pass through at cost
-  // (still safety-margin-adjusted, just no profit on top) — that's a
-  // deliberate business choice, not a rounding artifact.
-  const marginableCost = (totalMaterialsCost + machineCost) * p.safetyMargin;
-  const passThroughCost = (totalLaborCost + totalPackagingCost) * p.safetyMargin;
-
-  // Margin-tier pricing: profit margin divides into the marginable cost,
-  // pass-through cost and add-ons are added flat on top. Rounded to the
-  // nearest dollar for a cleaner customer-facing number — everything
-  // downstream (Fiverr fee, your profit) is computed off that rounded,
-  // actually-charged price.
+  // Margin-tier pricing (mirrors G49/G51/G53: price = cost / (1 - margin),
+  // then add-ons added flat on top). Margin applies to the FULL cost —
+  // materials, labor, machine, and packaging all get marked up — so every
+  // job carries real profit after Fiverr's cut, regardless of how much of
+  // its cost is materials vs. labor/shipping. (The customer-facing view
+  // below redistributes this same total differently for display — labor
+  // and shipping shown at cost, the margin folded into materials/printing
+  // instead — but the actual price and your actual profit are computed
+  // here, off the full cost.)
   const fiverrFeePercent = p.fiverrFeePercent ?? 0;
   const prices = p.marginTiers.map((m) => {
-    const rawPrice = marginableCost / (1 - m) + passThroughCost + addOnsCost;
+    const rawPrice = landedCost / (1 - m) + addOnsCost;
     const price = Math.round(rawPrice);
     const fiverrFee = price * fiverrFeePercent;
     // Add-ons are treated as ~zero extra cost to you (pure upsell), so
@@ -109,18 +106,17 @@ function calculateQuote(p) {
     addOnsCost,
     landedCostRaw,
     landedCost,
-    marginableCost,
-    passThroughCost,
     prices,
   };
 }
 
 /**
- * Customer-facing breakdown for one margin tier. Labor and packaging are
- * shown 1:1 (cost, no profit margin) — the entire profit margin is folded
- * proportionally into materials and printing (machine cost) only, so the
- * lines still sum exactly to that tier's (rounded) price. No margin
- * percent or landed cost is exposed.
+ * Customer-facing breakdown for one margin tier. This is purely a DISPLAY
+ * reallocation of the same total price above — labor and packaging/
+ * shipping are shown at cost (1:1, no visible markup), and the margin
+ * that would otherwise show up there is folded into materials and
+ * printing (machine cost) instead. The lines still sum exactly to that
+ * tier's real price. No margin percent or landed cost is exposed.
  */
 function customerBreakdownForTier(quote, tierIndex) {
   const tier = quote.prices[tierIndex];
