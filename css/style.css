@@ -458,6 +458,14 @@ html, body {
   font-family: var(--mono);
 }
 
+.app-version {
+  font-size: 10px;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  text-align: right;
+  margin: 8px 0 0;
+}
+
 @media (max-width: 400px) {
   .field-row label { flex-basis: 100%; }
   .field-hint { padding-left: 0; }

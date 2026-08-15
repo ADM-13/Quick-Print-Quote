@@ -743,7 +743,7 @@ function recalculate() {
   state.parts.forEach((part) => {
     const est = isFdm
       ? estimateFDM(part.geometry, printerCfg, CONFIG.fdmEstimate)
-      : estimateResin(part.geometry, printerCfg, CONFIG.resinEstimate);
+      : estimateResin(part.geometry, printerCfg, CONFIG.resinEstimate, state.resinTier);
     totalVolumeMm3 += est.totalVolumeMm3;
     totalHours += est.hours;
     if (!est.fits) anyMisfit = true;
@@ -903,5 +903,12 @@ customerModal.addEventListener('click', (e) => {
 // ----------------------------------------------------------------------
 // INIT
 // ----------------------------------------------------------------------
+// Bump this alongside the ?v= cache-buster in index.html on every deploy —
+// shown in the footer so it's obvious at a glance whether an update
+// actually landed, instead of guessing from behavior.
+const APP_VERSION = 9;
+const appVersionEl = el('appVersion');
+if (appVersionEl) appVersionEl.textContent = `App v${APP_VERSION}`;
+
 populateMaterialsForPrinter();
 applyLaborDefault();

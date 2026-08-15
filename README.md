@@ -61,14 +61,17 @@ for a phone tool, but worth knowing).
 
 ### Updating the app after the first deploy
 
-`index.html` loads `css/style.css` and `js/app.js` with a `?v=8` on the end.
+`index.html` loads `css/style.css` and `js/app.js` with a `?v=9` on the end.
 That's a cache-buster — without it, browsers (and GitHub Pages' own CDN)
 can keep serving an old cached copy of those files even after you've pushed
 new ones, which looks exactly like "I made the change but nothing's
-different." **Bump that number (`?v=8`, `?v=9`, ...) every time you push an
-update** to force a fresh fetch. If something still looks unchanged after a
-version bump, try a hard refresh (Ctrl/Cmd+Shift+R) or an incognito/private
-window to rule out the browser cache specifically.
+different." **Bump that number (`?v=10`, `?v=11`, ...) every time you push an
+update. The footer of the app itself shows a small "App vN" tag (from
+`APP_VERSION` in `js/app.js`) — bump that number too, so you can glance at
+the live page and instantly confirm whether your latest push actually
+deployed, instead of guessing from behavior.** If something still looks
+unchanged after a version bump, try a hard refresh (Ctrl/Cmd+Shift+R) or an
+incognito/private window to rule out the browser cache specifically.
 
 ## How the estimate works (and where it's weakest)
 

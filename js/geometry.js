@@ -216,8 +216,8 @@ function estimateFDM(geometry, printerCfg, fdmCfg) {
 /**
  * Full resin material + time estimate.
  */
-function estimateResin(geometry, printerCfg, resinCfg) {
-  const { volumeMm3 } = computeMeshStats(geometry);
+function estimateResin(geometry, printerCfg, resinCfg, sizeTier) {
+  const { volumeMm3, surfaceAreaMm2 } = computeMeshStats(geometry);
   // Resin printers cure layer-by-layer regardless of orientation choice in
   // the same way FDM does — orientation mainly affects supports/peel force,
   // which we approximate as a flat support fraction rather than re-running
@@ -225,8 +225,19 @@ function estimateResin(geometry, printerCfg, resinCfg) {
   const orient = findBestOrientation(geometry, 45);
   const fits = fitsOnPlate(orient.bbox, printerCfg.buildPlate);
 
+  // Hollowing: shell volume (surface area x wall thickness) + a fraction
+  // of the interior, per the size tier. Small parts default to 1.0 (left
+  // solid); medium/large get hollowed with minimal interior fill.
+  const shellVolumeMm3 = surfaceAreaMm2 * resinCfg.hollowWallMm;
+  const interiorVolumeMm3 = Math.max(volumeMm3 - shellVolumeMm3, 0);
+  const fillFraction = resinCfg.interiorFillBySizeTier[sizeTier] ?? 1.0;
+  const printedPartVolumeMm3 = Math.min(shellVolumeMm3 + interiorVolumeMm3 * fillFraction, volumeMm3);
+
+  // Supports attach to the part's external geometry, not its (now mostly
+  // hollow) internal volume — so this scales off the original solid volume,
+  // not the hollowed material volume above.
   const supportVolumeMm3 = volumeMm3 * resinCfg.supportVolumeFraction;
-  const totalVolumeMm3 = volumeMm3 + supportVolumeMm3;
+  const totalVolumeMm3 = printedPartVolumeMm3 + supportVolumeMm3;
 
   const numLayers = Math.ceil(orient.bbox.z / printerCfg.layerHeightMm);
   const printSeconds =
